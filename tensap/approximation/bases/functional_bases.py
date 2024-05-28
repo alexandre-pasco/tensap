@@ -288,7 +288,7 @@ class FunctionalBases:
             ind = np.atleast_1d(self.ndim())
             x = np.hsplit(x, np.cumsum(ind[dims])[:-1])
 
-        out = [y.eval(z) for y, z in zip(self.bases[dims], x)]
+        out = [y.eval(z) for y, z in zip(np.array(self.bases)[dims], x)]
         if nargout == 1:
             return out
         return out, x
