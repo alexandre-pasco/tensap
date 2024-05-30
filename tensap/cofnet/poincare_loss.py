@@ -2,9 +2,7 @@ import numpy as np
 import scipy
 
 
-
-
-class PoincareLossFunction():
+class PoincareLossFunction:
     """
     Class PoincareLossFunction.
 
@@ -42,7 +40,7 @@ class PoincareLossFunction():
         return self._eval(self.jac_u, self.jac_g)
 
 
-class RayleighPoincareLossFunction():
+class RayleighPoincareLossFunction:
 
     def __init__(self, jac_u=None, jac_basis=None):
         self.jac_u = jac_u
@@ -189,6 +187,11 @@ class RayleighPoincareLossFunction():
             S += np.kron(GBG_inv @ GAG @ GBG_inv, B) / N
         return S
 
+    def build_full_s(self, G, jac_u=None, jac_basis=None):
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
+        return self._build_full_s(G, jac_u, jac_basis)
+
     @staticmethod
     def _build_full_h(G, jac_u, jac_basis):
         Km = G.shape[0] * G.shape[1]
@@ -202,3 +205,8 @@ class RayleighPoincareLossFunction():
             GBG_inv = np.linalg.inv(GBG)
             H += np.kron(GBG_inv, A) / N
         return H
+
+    def build_full_h(self, G, jac_u=None, jac_basis=None):
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
+        return self._build_full_h(G, jac_u, jac_basis)
