@@ -542,7 +542,7 @@ class RayleighPoincareLossFunction:
             jg_inv = scipy.linalg.pinv(jg)
             p = np.eye(jb.shape[1]) - jg_inv @ jg
             diag_mat += (jb @ p @ grad_u @ grad_u.T @ jg_inv) * (jb @ jg_inv)
-            diag_mat -= (jb @ p @ grad_u) ** 2 @ np.diag(jg_inv.T @ jg_inv).reshape(1, -1)
+            diag_mat -= (jb @ p @ grad_u) ** 2 @ np.ones((ju.shape[0], 1)) @ np.diag(jg_inv.T @ jg_inv).reshape(1, -1)
             diag_mat += (jb @ jg_inv) * (jb @ p @ grad_u @ grad_u.T @ jg_inv)
             diag_mat += (jb @ p) ** 2 @ np.ones((d, 1)) @ np.diag(jg_inv.T @ grad_u @ grad_u.T @ jg_inv).reshape(1, -1)
         diag_mat = 2 * diag_mat / N
