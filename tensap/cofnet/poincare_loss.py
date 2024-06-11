@@ -636,4 +636,30 @@ class RayleighPoincareLossFunction:
         if jac_u is None: jac_u = self.jac_u
         if jac_basis is None: jac_basis = self.jac_basis
         return self._apply_hessian_inv(X, G, jac_u, jac_basis, **kwargs)
-    
+
+    def eval_hessian_full(self, G, jac_u=None, jac_basis=None):
+        """
+        Build the full matrices Hess(G).
+        This should only be used for debugging or testing purpose.
+
+        Parameters
+        ----------
+        G : numpy.ndarray
+            Has shape (K, m).
+        jac_u : numpy.ndarray
+            Has shape (N, n, d)
+        jac_basis : numpy.ndarray
+            Has shape (N, K, d)
+
+        Returns
+        -------
+        Hess : numpy.ndarray
+            Has shape (K*m, K*m).
+        """
+        Km = G.shape[0] * G.shape[1]
+        hess = np.zeros((Km, Km))
+        for i in range(Km):
+            x = np.zeros(Km)
+            x[i] = 1
+            hess[i,:] = self.apply_hessian(x, G, jac_u, jac_basis)
+        return hess
