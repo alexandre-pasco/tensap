@@ -46,7 +46,10 @@ class PoincareLossFunction:
             Poincare based loss.
         """
         jac_ut = np.moveaxis(jac_u, -1, -2)
-        proj = np.array([jg.T @ np.linalg.solve(jg @ jg.T, jg) for jg in jac_g])
+        proj = np.zeros((jac_g.shape[0], jac_g.shape[2], jac_g.shape[2]))
+        for k, jg in enumerate(jac_g):
+            # proj[k] = jg.T @ np.linalg.solve(jg @ jg.T, jg)
+            proj[k] = scipy.linalg.pinv(jg) @ jg
         residual = jac_ut - np.einsum("kil,klj->kij", proj, jac_ut, optimize=True)
         losses = np.linalg.norm(residual, axis=(1,2)) ** 2
         loss = losses.mean()
@@ -127,7 +130,12 @@ class RayleighPoincareLossFunction:
         loss : float
             Poincare based loss.
         """
-        jac_g = np.einsum("ij, kjl", G.T, jac_basis)
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        jac_g = np.einsum("ij, kjl", Gmat.T, jac_basis)
         jac_g = np.moveaxis(jac_g, 0, 1)
         return PoincareLossFunction._eval(jac_u, jac_g)
 
@@ -161,11 +169,16 @@ class RayleighPoincareLossFunction:
 
     @staticmethod
     def _eval_gradient(G, jac_u, jac_basis):
-        m = G.shape[1]
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        m = Gmat.shape[1]
         d = jac_u.shape[2]
         N = len(jac_u)
-        jac_g = np.moveaxis(np.einsum("ij, kjl", G.T, jac_basis), 0, 1)
-        gradients = np.zeros((N,) + G.shape)
+        jac_g = np.moveaxis(np.einsum("ij, kjl", Gmat.T, jac_basis), 0, 1)
+        gradients = np.zeros((N,) + Gmat.shape)
         for k, jb, jg, ju in zip(np.arange(N), jac_basis, jac_g, jac_u):
             ug, sg, vgh = np.linalg.svd(jg)
             ug, vgh = ug[:, :m], vgh[:m, :]
@@ -173,6 +186,7 @@ class RayleighPoincareLossFunction:
             res2 = ug @ np.diag(1 / sg) @ vgh @ ju.T
             gradients[k] = - 2 * res1 @ res2.T
         gradient = gradients.mean(axis=0)
+        gradient = gradient.reshape(G.shape, order="F")
         return gradient
 
     def eval_gradient(self, G, jac_u=None, jac_basis=None):
@@ -181,7 +195,7 @@ class RayleighPoincareLossFunction:
         return self._eval_gradient(G, jac_u, jac_basis)
 
     @staticmethod
-    def _apply_sigma_h(X, G, jac_u, jac_basis):
+    def _apply_sigma_hmat(X, G, jac_u, jac_basis):
         """
         Compute the matrix-vector multiplication Sigma(G)X and H(G)X as described in Bigoni et al. 2022, where
         X is a column-major vectorized matrix of same size as G.
@@ -192,7 +206,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -205,8 +219,13 @@ class RayleighPoincareLossFunction:
         Hx : numpy.ndarray
             Has same shape as X.
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         if X.ndim == 1:
-            Xmat = X.reshape(G.shape, order='F')  # column-major ordering
+            Xmat = X.reshape(Gmat.shape, order='F')  # column-major ordering
         else:
             Xmat = X
         N = len(jac_u)
@@ -214,7 +233,7 @@ class RayleighPoincareLossFunction:
         Sx = np.zeros(Xmat.shape)
         for jb, ju in zip(jac_basis, jac_u):
             jbju = jb @ ju.T
-            jg = G.T @ jb
+            jg = Gmat.T @ jb
             jgju = jg @ ju.T
             GBG = jg @ jg.T
             GAG = jgju @ jgju.T
@@ -226,7 +245,7 @@ class RayleighPoincareLossFunction:
         Hx = Hx.reshape(X.shape, order='F')
         return Sx, Hx
 
-    def apply_sigma_h(self, X, G, jac_u=None, jac_basis=None):
+    def apply_sigma_hmat(self, X, G, jac_u=None, jac_basis=None):
         """
         Compute the matrix-vector multiplication Sigma(G)X and H(G)X as described in Bigoni et al. 2022, where
         X is a column-major vectorized matrix of same size as G.
@@ -238,7 +257,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray, optional.
             Has shape (N, n, d)
         jac_basis : numpy.ndarray, optional.
@@ -253,7 +272,7 @@ class RayleighPoincareLossFunction:
         """
         if jac_u is None: jac_u = self.jac_u
         if jac_basis is None: jac_basis = self.jac_basis
-        return self._apply_sigma_h(X, G, jac_u, jac_basis)
+        return self._apply_sigma_hmat(X, G, jac_u, jac_basis)
 
     @staticmethod
     def _eval_sigma_diag(G, jac_u, jac_basis):
@@ -264,7 +283,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -275,13 +294,18 @@ class RayleighPoincareLossFunction:
         diag : numpy.ndarray
             Has shape (K*m, ).
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         N = len(jac_u)
-        diag = np.zeros(G.shape[0] * G.shape[1])
+        diag = np.zeros(Gmat.shape[0] * Gmat.shape[1])
         for jb, ju in zip(jac_basis, jac_u):
             B = jb @ jb.T
             A = jb @ ju.T @ ju @ jb.T
-            GBG = G.T @ B @ G
-            GAG = G.T @ A @ G
+            GBG = Gmat.T @ B @ Gmat
+            GAG = Gmat.T @ A @ Gmat
             M = np.linalg.solve(GBG.T, GAG.T).T
             M = np.linalg.solve(GBG, M)
             diag1 = np.diag(M)
@@ -324,7 +348,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -337,14 +361,19 @@ class RayleighPoincareLossFunction:
         out : numpy.ndarray
             Has same shape as X.
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         if X.ndim == 2:
             Xvec = X.flatten(order='F')  # column-major flattening
         else:
             Xvec = X
-        Km = G.shape[0] * G.shape[1]
-        matvec = lambda X: RayleighPoincareLossFunction._apply_sigma_h(X, G, jac_u, jac_basis)[0]
+        Km = Gmat.shape[0] * Gmat.shape[1]
+        matvec = lambda X: RayleighPoincareLossFunction._apply_sigma_hmat(X, Gmat, jac_u, jac_basis)[0]
         sigma = scipy.sparse.linalg.LinearOperator((Km, Km), matvec=matvec)
-        diag = RayleighPoincareLossFunction._eval_sigma_diag(G, jac_u, jac_basis)
+        diag = RayleighPoincareLossFunction._eval_sigma_diag(Gmat, jac_u, jac_basis)
         M = scipy.sparse.diags(1/diag)
         out, info = scipy.sparse.linalg.cg(sigma, Xvec, M=M, **kwargs)
         out = out.reshape(X.shape, order='F')
@@ -361,7 +390,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -387,7 +416,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -400,7 +429,12 @@ class RayleighPoincareLossFunction:
         H : numpy.ndarray
             Has shape (K*m, K*m).
         """
-        Km = G.shape[0] * G.shape[1]
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        Km = Gmat.shape[0] * Gmat.shape[1]
         N = jac_u.shape[0]
         S = np.zeros((Km, Km))
         H = np.zeros((Km, Km))
@@ -408,7 +442,7 @@ class RayleighPoincareLossFunction:
             jbju = jb @ ju.T
             A = jbju @ jbju.T
             B = jb @ jb.T
-            jg = G.T @ jb
+            jg = Gmat.T @ jb
             jgju = jg @ ju.T
             GBG = jg @ jg.T
             GAG = jgju @ jgju.T
@@ -426,7 +460,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray, optional
             Has shape (N, n, d)
         jac_basis : numpy.ndarray, optional
@@ -455,7 +489,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) of (K*m, ).
         jac_u : numpy.ndarray, optional.
             Has shape (N, n, d)
         jac_basis : numpy.ndarray, optional.
@@ -466,8 +500,13 @@ class RayleighPoincareLossFunction:
         hess : numpy.ndarray
             Has same shape as X.
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         if X.ndim == 1:
-            Xmat = X.reshape(G.shape, order='F')  # column-major ordering
+            Xmat = X.reshape(Gmat.shape, order='F')  # column-major ordering
         else:
             Xmat = X
         d = jac_u.shape[-1]
@@ -476,7 +515,7 @@ class RayleighPoincareLossFunction:
         for jb, ju in zip(jac_basis, jac_u):
             grad_u = ju.T
             djg = Xmat.T @ jb
-            jg = G.T @ jb
+            jg = Gmat.T @ jb
             jg_inv = scipy.linalg.pinv(jg)
             p = np.eye(d) - jg_inv @ jg
             res1 = 2 * jg_inv.T @ (djg.T @ jg_inv.T - jg_inv @ djg @ p) @ grad_u @ grad_u.T @ p
@@ -497,7 +536,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray, optional.
             Has shape (N, n, d)
         jac_basis : numpy.ndarray, optional.
@@ -522,7 +561,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -533,12 +572,17 @@ class RayleighPoincareLossFunction:
         diag : numpy.ndarray
             Has shape (K*m, ).
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         d = jac_u.shape[-1]
         N = len(jac_u)
-        diag_mat = 0 * G
+        diag_mat = 0 * Gmat
         for jb, ju in zip(jac_basis, jac_u):
             grad_u = ju.T
-            jg = G.T @ jb
+            jg = Gmat.T @ jb
             jg_inv = scipy.linalg.pinv(jg)
             p = np.eye(jb.shape[1]) - jg_inv @ jg
             diag_mat += (jb @ p @ grad_u @ grad_u.T @ jg_inv) * (jb @ jg_inv)
@@ -558,7 +602,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -584,7 +628,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -597,14 +641,19 @@ class RayleighPoincareLossFunction:
         out : numpy.ndarray
             Has same shape as X.
         """
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
         if X.ndim == 2:
             Xvec = X.flatten(order='F')  # column-major flattening
         else:
             Xvec = X
-        Km = G.shape[0] * G.shape[1]
-        matvec = lambda X: RayleighPoincareLossFunction._apply_hessian(X, G, jac_u, jac_basis)
+        Km = Gmat.shape[0] * Gmat.shape[1]
+        matvec = lambda X: RayleighPoincareLossFunction._apply_hessian(X, Gmat, jac_u, jac_basis)
         hess = scipy.sparse.linalg.LinearOperator((Km, Km), matvec=matvec)
-        diag = RayleighPoincareLossFunction._eval_hessian_diag(G, jac_u, jac_basis)
+        diag = RayleighPoincareLossFunction._eval_hessian_diag(Gmat, jac_u, jac_basis)
         M = scipy.sparse.diags(1 / diag)
         out, info = scipy.sparse.linalg.cg(hess, Xvec, M=M, **kwargs)
         out = out.reshape(X.shape, order='F')
@@ -620,7 +669,7 @@ class RayleighPoincareLossFunction:
         X : numpy.ndarray
             Has shape (K, m) or (K*m, ).
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K*m, ).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -637,7 +686,8 @@ class RayleighPoincareLossFunction:
         if jac_basis is None: jac_basis = self.jac_basis
         return self._apply_hessian_inv(X, G, jac_u, jac_basis, **kwargs)
 
-    def eval_hessian_full(self, G, jac_u=None, jac_basis=None):
+    @staticmethod
+    def _eval_hessian_full(G, jac_u, jac_basis):
         """
         Build the full matrices Hess(G).
         This should only be used for debugging or testing purpose.
@@ -645,7 +695,7 @@ class RayleighPoincareLossFunction:
         Parameters
         ----------
         G : numpy.ndarray
-            Has shape (K, m).
+            Has shape (K, m) or (K, m).
         jac_u : numpy.ndarray
             Has shape (N, n, d)
         jac_basis : numpy.ndarray
@@ -656,10 +706,39 @@ class RayleighPoincareLossFunction:
         Hess : numpy.ndarray
             Has shape (K*m, K*m).
         """
-        Km = G.shape[0] * G.shape[1]
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        Km = Gmat.shape[0] * Gmat.shape[1]
         hess = np.zeros((Km, Km))
         for i in range(Km):
             x = np.zeros(Km)
             x[i] = 1
-            hess[i,:] = self.apply_hessian(x, G, jac_u, jac_basis)
+            hess[i,:] = RayleighPoincareLossFunction._apply_hessian(x, Gmat, jac_u, jac_basis)
         return hess
+
+    def eval_hessian_full(self, G, jac_u=None, jac_basis=None):
+        """
+        Build the full matrices Hess(G).
+        This should only be used for debugging or testing purpose.
+
+        Parameters
+        ----------
+        G : numpy.ndarray
+            Has shape (K, m) or (K, m).
+        jac_u : numpy.ndarray
+            Has shape (N, n, d)
+        jac_basis : numpy.ndarray
+            Has shape (N, K, d)
+
+        Returns
+        -------
+        Hess : numpy.ndarray
+            Has shape (K*m, K*m).
+        """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
+        return self._eval_hessian_full(G, jac_u, jac_basis)
+
