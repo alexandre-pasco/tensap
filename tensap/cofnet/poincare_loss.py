@@ -42,18 +42,16 @@ class PoincareLossFunction:
 
         Returns
         -------
-        loss : float
+        out : float
             Poincare based loss.
         """
-        jac_ut = np.moveaxis(jac_u, -1, -2)
-        proj = np.zeros((jac_g.shape[0], jac_g.shape[2], jac_g.shape[2]))
-        for k, jg in enumerate(jac_g):
-            # proj[k] = jg.T @ np.linalg.solve(jg @ jg.T, jg)
-            proj[k] = scipy.linalg.pinv(jg) @ jg
-        residual = jac_ut - np.einsum("kil,klj->kij", proj, jac_ut, optimize=True)
-        losses = np.linalg.norm(residual, axis=(1,2)) ** 2
-        loss = losses.mean()
-        return loss
+        N = jac_u.shape[0]
+        out = 0
+        for ju, jg in zip(jac_u, jac_g):
+            proj = scipy.linalg.pinv(jg) @ jg
+            out += np.linalg.norm(ju.T - proj @ ju.T)**2 / N
+        return out
+
 
     def eval(self, jac_u=None, jac_g=None):
         """
@@ -167,8 +165,9 @@ class RayleighPoincareLossFunction:
         if jac_basis is None: jac_basis = self.jac_basis
         return self._eval(G, jac_u, jac_basis)
 
-    @staticmethod
-    def _eval_gradient(G, jac_u, jac_basis):
+    def eval_gradient(self, G, jac_u=None, jac_basis=None):
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -189,13 +188,7 @@ class RayleighPoincareLossFunction:
         gradient = gradient.reshape(G.shape, order="F")
         return gradient
 
-    def eval_gradient(self, G, jac_u=None, jac_basis=None):
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._eval_gradient(G, jac_u, jac_basis)
-
-    @staticmethod
-    def _apply_sigma_hmat(X, G, jac_u, jac_basis):
+    def apply_sigma_hmat(self, X, G, jac_u=None, jac_basis=None):
         """
         Compute the matrix-vector multiplication Sigma(G)X and H(G)X as described in Bigoni et al. 2022, where
         X is a column-major vectorized matrix of same size as G.
@@ -219,6 +212,8 @@ class RayleighPoincareLossFunction:
         Hx : numpy.ndarray
             Has same shape as X.
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -245,37 +240,7 @@ class RayleighPoincareLossFunction:
         Hx = Hx.reshape(X.shape, order='F')
         return Sx, Hx
 
-    def apply_sigma_hmat(self, X, G, jac_u=None, jac_basis=None):
-        """
-        Compute the matrix-vector multiplication Sigma(G)X and H(G)X as described in Bigoni et al. 2022, where
-        X is a column-major vectorized matrix of same size as G.
-        In other words, it computes Sigma(G) @ X.flatten('F') and H(G) @ X.flatten('F').
-        If optional parameters are not provided, then the corresponding attributes are used.
-
-        Parameters
-        ----------
-        X : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray, optional.
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray, optional.
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        Sx : numpy.ndarray
-            Has same shape as X.
-        Hx : numpy.ndarray
-            Has same shape as X.
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._apply_sigma_hmat(X, G, jac_u, jac_basis)
-
-    @staticmethod
-    def _eval_sigma_diag(G, jac_u, jac_basis):
+    def eval_sigma_diag(self, G, jac_u=None, jac_basis=None):
         """
         Compute the diagnoal of the matrix Sigma(G) from Bigoni et al. 2022.
         It is used for preconditioning the conjugate gradient used to apply the inverse of Sigma(G).
@@ -294,6 +259,8 @@ class RayleighPoincareLossFunction:
         diag : numpy.ndarray
             Has shape (K*m, ).
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -313,32 +280,8 @@ class RayleighPoincareLossFunction:
             diag += np.kron(diag1, diag2) / N
         return diag
 
-    def eval_sigma_diag(self, G, jac_u=None, jac_basis=None):
-        """
-        Compute the diagnoal of the matrix Sigma(G) from Bigoni et al. 2022.
-        It is used for preconditioning the conjugate gradient used to apply the inverse of Sigma(G).
-        If optional parameters are not provided, then the corresponding attributes are used.
 
-        Parameters
-        ----------
-        G : numpy.ndarray
-            Has shape (K, m).
-        jac_u : numpy.ndarray
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        diag : numpy.ndarray
-            Has shape (K*m, ).
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._eval_sigma_diag(G, jac_u, jac_basis)
-
-    @staticmethod
-    def _apply_sigma_inv(X, G, jac_u, jac_basis, **kwargs):
+    def apply_sigma_inv(self, X, G, jac_u=None, jac_basis=None, **kwargs):
         """
         Apply the inverse of the matrix Sigma(G) from Bigoni et al. 2022 to a vector X.
         The conjugate gradient method is used with Jacobi preconditioning.
@@ -361,6 +304,8 @@ class RayleighPoincareLossFunction:
         out : numpy.ndarray
             Has same shape as X.
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -371,44 +316,16 @@ class RayleighPoincareLossFunction:
         else:
             Xvec = X
         Km = Gmat.shape[0] * Gmat.shape[1]
-        matvec = lambda X: RayleighPoincareLossFunction._apply_sigma_hmat(X, Gmat, jac_u, jac_basis)[0]
+        matvec = lambda X: self.apply_sigma_hmat(X, Gmat, jac_u, jac_basis)[0]
         sigma = scipy.sparse.linalg.LinearOperator((Km, Km), matvec=matvec)
-        diag = RayleighPoincareLossFunction._eval_sigma_diag(Gmat, jac_u, jac_basis)
+        diag = self.eval_sigma_diag(Gmat, jac_u, jac_basis)
         M = scipy.sparse.diags(1/diag)
         out, info = scipy.sparse.linalg.cg(sigma, Xvec, M=M, **kwargs)
         out = out.reshape(X.shape, order='F')
         return out
 
-    def apply_sigma_inv(self, X, G, jac_u=None, jac_basis=None, **kwargs):
-        """
-        Apply the inverse of the matrix Sigma(G) from Bigoni et al. 2022 to a vector X.
-        The conjugate gradient method is used with Jacobi preconditioning.
-        If optional parameters are not provided, then the corresponding attributes are used.
 
-        Parameters
-        ----------
-        X : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray
-            Has shape (N, K, d)
-        **kwargs : dict
-            Key word arguments for scipy.sparse.linalg.cg.
-
-        Returns
-        -------
-        out : numpy.ndarray
-            Has same shape as X.
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._apply_sigma_inv(X, G, jac_u, jac_basis, **kwargs)
-
-    @staticmethod
-    def _eval_sigma_h_full(G, jac_u, jac_basis):
+    def eval_sigma_h_full(self, G, jac_u=None, jac_basis=None):
         """
         Build the full matrices Sigma(G) and H(G) from Bigoni et al. 2022.
         This should only be used for debugging or testing purpose.
@@ -429,6 +346,8 @@ class RayleighPoincareLossFunction:
         H : numpy.ndarray
             Has shape (K*m, K*m).
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -451,34 +370,7 @@ class RayleighPoincareLossFunction:
             H += np.kron(GBG_inv, A) / N
         return S, H
 
-    def eval_sigma_h_full(self, G, jac_u=None, jac_basis=None):
-        """
-        Build the full matrices Sigma(G) and H(G) from Bigoni et al. 2022.
-        This should only be used for debugging or testing purpose.
-        If optional parameters are not provided, then the corresponding attributes are used.
-
-        Parameters
-        ----------
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray, optional
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray, optional
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        S : numpy.ndarray
-            Has shape (K*m, K*m).
-        H : numpy.ndarray
-            Has shape (K*m, K*m).
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._eval_sigma_h_full(G, jac_u, jac_basis)
-
-    @staticmethod
-    def _apply_hessian(X, G, jac_u, jac_basis):
+    def apply_hessian(self, X, G, jac_u=None, jac_basis=None):
         """
         Compute the matrix-vector multiplication Hess(G) @ X where
         X is a column-major vectorized matrix of same size as G.
@@ -500,6 +392,8 @@ class RayleighPoincareLossFunction:
         hess : numpy.ndarray
             Has same shape as X.
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -525,34 +419,7 @@ class RayleighPoincareLossFunction:
         hess = hess.reshape(X.shape, order='F')  # column-major ordering
         return hess
 
-    def apply_hessian(self, X, G, jac_u=None, jac_basis=None):
-        """
-        Compute the matrix-vector multiplication Hess(G) @ X where
-        X is a column-major vectorized matrix of same size as G.
-        In other words, it computes Hess(G) @ X.flatten('F').
-
-        Parameters
-        ----------
-        X : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray, optional.
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray, optional.
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        hess : numpy.ndarray
-            Has same shape as X.
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._apply_hessian(X, G, jac_u, jac_basis)
-
-    @staticmethod
-    def _eval_hessian_diag(G, jac_u, jac_basis):
+    def eval_hessian_diag(self, G, jac_u, jac_basis):
         """
         Compute the diagnoal of the matrix Hess(G).
         It is used for preconditioning the conjugate gradient used to apply the inverse of Hess(G).
@@ -572,6 +439,8 @@ class RayleighPoincareLossFunction:
         diag : numpy.ndarray
             Has shape (K*m, ).
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -593,32 +462,7 @@ class RayleighPoincareLossFunction:
         diag = diag_mat.flatten(order="F")
         return diag
 
-    def eval_hessian_diag(self, G, jac_u=None, jac_basis=None):
-        """
-        Compute the diagnoal of the matrix Hess(G).
-        It is used for preconditioning the conjugate gradient used to apply the inverse of Hess(G).
-        If optional parameters are not provided, then the corresponding attributes are used.
-
-        Parameters
-        ----------
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        diag : numpy.ndarray
-            Has shape (K*m, ).
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._eval_hessian_diag(G, jac_u, jac_basis)
-
-    @staticmethod
-    def _apply_hessian_inv(X, G, jac_u, jac_basis, **kwargs):
+    def _apply_hessian_inv(self, X, G, jac_u=None, jac_basis=None, **kwargs):
         """
         Apply the inverse of the matrix Hess(G) to a vector X.
         The conjugate gradient method is used with Jacobi preconditioning.
@@ -641,6 +485,8 @@ class RayleighPoincareLossFunction:
         out : numpy.ndarray
             Has same shape as X.
         """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
         K = jac_basis.shape[1]
         if G.ndim == 1:
             Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
@@ -658,66 +504,6 @@ class RayleighPoincareLossFunction:
         out, info = scipy.sparse.linalg.cg(hess, Xvec, M=M, **kwargs)
         out = out.reshape(X.shape, order='F')
         return out
-
-    def apply_hessian_inv(self, X, G, jac_u=None, jac_basis=None, **kwargs):
-        """
-        Apply the inverse of the matrix Hess(G) to a vector X.
-        The conjugate gradient method is used with Jacobi preconditioning.
-
-        Parameters
-        ----------
-        X : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        G : numpy.ndarray
-            Has shape (K, m) or (K*m, ).
-        jac_u : numpy.ndarray
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray
-            Has shape (N, K, d)
-        **kwargs : dict
-            Key word arguments for scipy.sparse.linalg.cg.
-
-        Returns
-        -------
-        out : numpy.ndarray
-            Has same shape as X.
-        """
-        if jac_u is None: jac_u = self.jac_u
-        if jac_basis is None: jac_basis = self.jac_basis
-        return self._apply_hessian_inv(X, G, jac_u, jac_basis, **kwargs)
-
-    @staticmethod
-    def _eval_hessian_full(G, jac_u, jac_basis):
-        """
-        Build the full matrices Hess(G).
-        This should only be used for debugging or testing purpose.
-
-        Parameters
-        ----------
-        G : numpy.ndarray
-            Has shape (K, m) or (K, m).
-        jac_u : numpy.ndarray
-            Has shape (N, n, d)
-        jac_basis : numpy.ndarray
-            Has shape (N, K, d)
-
-        Returns
-        -------
-        Hess : numpy.ndarray
-            Has shape (K*m, K*m).
-        """
-        K = jac_basis.shape[1]
-        if G.ndim == 1:
-            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
-        else:
-            Gmat = G
-        Km = Gmat.shape[0] * Gmat.shape[1]
-        hess = np.zeros((Km, Km))
-        for i in range(Km):
-            x = np.zeros(Km)
-            x[i] = 1
-            hess[i,:] = RayleighPoincareLossFunction._apply_hessian(x, Gmat, jac_u, jac_basis)
-        return hess
 
     def eval_hessian_full(self, G, jac_u=None, jac_basis=None):
         """
@@ -740,5 +526,74 @@ class RayleighPoincareLossFunction:
         """
         if jac_u is None: jac_u = self.jac_u
         if jac_basis is None: jac_basis = self.jac_basis
-        return self._eval_hessian_full(G, jac_u, jac_basis)
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        Km = Gmat.shape[0] * Gmat.shape[1]
+        hess = np.zeros((Km, Km))
+        for i in range(Km):
+            x = np.zeros(Km)
+            x[i] = 1
+            hess[i,:] = self.apply_hessian(x, Gmat, jac_u, jac_basis)
+        return hess
 
+    def quasi_newton_iteration(self, G, jac_u=None, jac_basis=None, **kwargs):
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
+        K = jac_basis.shape[1]
+        if G.ndim == 1:
+            Gmat = G.reshape((K, G.shape[0] // K), order='F')  # column-major ordering
+        else:
+            Gmat = G
+        _, b = self.apply_sigma_hmat(Gmat, Gmat, jac_u, jac_basis)
+        Gaux = self.apply_sigma_inv(b, Gmat, jac_u, jac_basis, **kwargs)
+        M = Gaux.T @ Gaux
+        Mcholinv = scipy.linalg.inv(scipy.linalg.cholesky(M))
+        Gnext = Gaux @ Mcholinv
+        return Gnext
+
+
+
+    def eval_geigh_matrices(self, G=None, jac_u=None, jac_basis=None, weight=0):
+        """
+        Build the matrices for my generalized eigh problem.
+
+        Parameters
+        ----------
+        jac_u
+        jac_basis
+        G
+
+        Returns
+        -------
+
+        """
+        if jac_u is None: jac_u = self.jac_u
+        if jac_basis is None: jac_basis = self.jac_basis
+        K, d = jac_basis.shape[1:]
+        A = np.zeros((K, K))
+        B = np.zeros((K, K))
+        for jb, ju in zip(jac_basis, jac_u):
+            if G is None:
+                P_G = np.zeros((d, d))
+            else:
+                jg = G.T @ jb
+                P_G = jg.T @ scipy.linalg.pinv(jg.T)
+            P_G_perp = np.eye(d) - P_G
+            v1 = jb @ P_G_perp @ ju.T / np.linalg.norm(P_G_perp @ ju.T)
+            v2 = jb @ P_G
+            Ax = v1 @ v1.T + v2 @ v2.T
+            Bx = jb @ jb.T
+            if weight == 0:
+                c = 1.
+            elif weight == 1:
+                c = np.linalg.norm(P_G_perp @ ju.T)**2
+            elif weight == 2:
+                c = np.linalg.norm(ju.T)**2
+            else:
+                raise NotImplementedError()
+            A += c * Ax / jac_u.shape[0]
+            B += c * Bx / jac_u.shape[0]
+        return A, B
