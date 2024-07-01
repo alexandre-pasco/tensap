@@ -110,6 +110,7 @@ from .approximation.tensor_approximation.principal_component_analysis.functional
 )
 from .cofnet.poincare_loss import *
 from .cofnet.poincare_loss_bigoni import *
+from .cofnet.poincare_loss_learning import *
 
 # Disable tensorflow's warning messages
 import os
