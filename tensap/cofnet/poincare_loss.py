@@ -79,11 +79,9 @@ class PoincareLoss:
 
     """
 
-    def __init__(self, jac_u=None, jac_g=None):
+    def __init__(self, jac_u, jac_g):
         self.jac_u = jac_u
         self.jac_g = jac_g
 
-    def eval(self, jac_u=None, jac_g=None):
-        if jac_u is None: jac_u = self.jac_u
-        if jac_g is None: jac_g = self.jac_g
-        return self.poincare_loss(jac_u, jac_g)
+    def eval(self):
+        return poincare_loss(self.jac_u, self.jac_g)

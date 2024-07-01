@@ -58,13 +58,12 @@ def _build_test_case():
         out = np.array([jf @ jg for jf, jg in zip(jac_fz, jac_gx)])
         return out
 
-    loss = tensap.RayleighPoincareLossFunction(basis, jac_u(x), basis.eval_jacobian(x))
-    loss1 = tensap.RayleighPoincareLossFunction(basis, jac_u(x)[:, [0], :], basis.eval_jacobian(x))
-    loss2 = tensap.RayleighPoincareLossFunction(basis, jac_u(x)[:, [1], :], basis.eval_jacobian(x))
+    loss = tensap.PoincareLossBigoni(jac_u(x), basis.eval_jacobian(x), basis)
+    loss1 = tensap.PoincareLossBigoni(jac_u(x)[:, [0], :], basis.eval_jacobian(x), basis)
+    loss2 = tensap.PoincareLossBigoni(jac_u(x)[:, [1], :], basis.eval_jacobian(x), basis)
     resolution = np.sqrt(np.finfo(G0.dtype).resolution)
 
     return G0, G1, G2, loss, loss1, loss2, resolution
-
 
 def test_eval():
     G0, G1, _, loss, loss1, loss2, resolution = _build_test_case()
@@ -81,7 +80,6 @@ def test_eval():
     np.testing.assert_allclose(l11 + l12 - l1, 0, atol=resolution)
     np.testing.assert_array_less([-l1, -l11, -l12], -resolution)
 
-
 def test_eval_gradient():
     G0, G1, _, loss, loss1, loss2, resolution = _build_test_case()
 
@@ -89,35 +87,43 @@ def test_eval_gradient():
     l01 = loss1.eval_gradient(G0)
     l02 = loss2.eval_gradient(G0)
     l1 = loss.eval_gradient(G1)
+    l1_bis = 2 * (loss.eval_SG_X(G1, G1) - loss.eval_HG_X(G1, G1))
     l11 = loss1.eval_gradient(G1)
     l12 = loss2.eval_gradient(G1)
 
     np.testing.assert_allclose([l0, l01, l02], 0, atol=resolution, err_msg="Gradient should be zero at min")
     np.testing.assert_allclose(l11 + l12, l1)
+    np.testing.assert_allclose(l1, l1_bis)
     np.testing.assert_array_less(-np.linalg.norm(l1), -resolution, err_msg="Gradient should be non zero for G1")
+
+def test_eval_SGinv():
+    _, G1, G2, loss, _, _, resolution = _build_test_case()
+    SG1_G2 = loss.eval_SG_X(G1, G2)
+    err = np.linalg.norm(G2 - loss.eval_SGinv_X(G1, SG1_G2, tol=1e-10))
+    np.testing.assert_allclose(err, 0, atol=resolution)
 
 
 def test_hessian():
     G0, G1, G2, loss, loss1, loss2, resolution = _build_test_case()
 
-    hl2_1 = loss.apply_hessian(G1, G2)
-    hl1_2 = loss.apply_hessian(G2, G1)  # Hess(G1) @ G2
-    hl11_2 = loss1.apply_hessian(G2, G1)
-    hl12_2 = loss2.apply_hessian(G2, G1)
+    hl2_1 = loss.eval_HessG_X(G2, G1)
+    hl1_2 = loss.eval_HessG_X(G1, G2)  # Hess(G1) @ G2
+    hl11_2 = loss1.eval_HessG_X(G1, G2)
+    hl12_2 = loss2.eval_HessG_X(G1, G2)
 
-    H1 = loss.eval_hessian_full(G1)
-    H0 = loss.eval_hessian_full(G0)
+    H1 = loss.eval_HessG_full(G1)
+    H0 = loss.eval_HessG_full(G0)
     w0 = np.linalg.eigvals(H0)
 
     err_sym = np.linalg.norm(H0-H0.T) / np.linalg.norm(H0) + np.linalg.norm(H1-H1.T) / np.linalg.norm(H1)
     err_spd = w0 / np.linalg.norm(H0)
 
     np.testing.assert_allclose(hl11_2 + hl12_2, hl1_2)
-    np.testing.assert_allclose(err_sym, 0, atol=resolution, err_msg="Hessian should be symetric")
+    np.testing.assert_allclose(err_sym, 0, atol=resolution, err_msg="Hessian should be symmetric")
     np.testing.assert_array_less(-err_spd, resolution, err_msg="Hessian should be spd at minimum")
-
 
 if __name__ == "__main__":
     test_eval()
     test_eval_gradient()
+    test_eval_SGinv()
     test_hessian()
