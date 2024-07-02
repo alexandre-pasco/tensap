@@ -95,3 +95,43 @@ def build_pymanopt_problem(jac_u, jac_basis, m, use_precond=True, pmo_kwargs={},
 
     return problem, optimizer
 
+
+def eval_geig_matrices(G, jac_u, jac_basis, weight=0):
+    """
+    Build the matrices for my generalized eigh problem.
+
+    Parameters
+    ----------
+    jac_u
+    jac_basis
+    G
+
+    Returns
+    -------
+
+    """
+    K, d = jac_basis.shape[1:]
+    A = np.zeros((K, K))
+    B = np.zeros((K, K))
+    for jb, ju in zip(jac_basis, jac_u):
+        if G is None:
+            P_G = np.zeros((d, d))
+        else:
+            jg = G.T @ jb
+            P_G = jg.T @ scipy.linalg.pinv(jg.T)
+        P_G_perp = np.eye(d) - P_G
+        v1 = jb @ P_G_perp @ ju.T / np.linalg.norm(P_G_perp @ ju.T)
+        v2 = jb @ P_G
+        Ax = v1 @ v1.T + v2 @ v2.T
+        Bx = jb @ jb.T
+        if weight == 0:
+            c = 1.
+        elif weight == 1:
+            c = np.linalg.norm(P_G_perp @ ju.T)**2
+        elif weight == 2:
+            c = np.linalg.norm(ju.T)**2
+        else:
+            raise NotImplementedError()
+        A += c * Ax / jac_u.shape[0]
+        B += c * Bx / jac_u.shape[0]
+    return A, B

@@ -73,8 +73,26 @@ def test_minimize_pymanopt():
     sigma = np.linalg.svd(G_fit.T @ G_true)[1].min()
     np.testing.assert_allclose(sigma, 1.)
 
+def test_geig():
+    G_true, G1, _, loss, _, _, resolution = _build_test_case(m=1)
+    A, B = eval_geig_matrices(None, loss.jac_u, loss.jac_basis)
+    w, v = scipy.linalg.eigh(A, B)
+    G_fit = np.linalg.svd(v[:,-1:], full_matrices=False)[0]
+    sigma = np.linalg.svd(G_fit.T @ G_true)[1].min()
+    np.testing.assert_allclose(sigma, 1.)
+
+def test_geig_bis():
+    G_true, G1, _, loss, _, _, resolution = _build_test_case(m=2)
+    A, B = eval_geig_matrices(G_true[:,:1], loss.jac_u, loss.jac_basis)
+    w, v = scipy.linalg.eigh(A, B)
+    G_fit = np.linalg.svd(v[:,-2:], full_matrices=False)[0]
+    sigma = np.linalg.svd(G_fit.T @ G_true)[1].min()
+    np.testing.assert_allclose(sigma, 1.)
+
 
 if __name__ == "__main__":
     test_minimize_qn_bigoni()
     test_minimize_scipy()
     test_minimize_pymanopt()
+    test_geig()
+    test_geig_bis()
