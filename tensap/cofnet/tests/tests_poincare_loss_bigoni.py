@@ -16,7 +16,7 @@ def _build_test_case():
     n = 2  # output dimension
     N = 50  # number of samples
     m = 2  # number of active features to learn
-    x = np.random.uniform(-1, 1, size=(N, d))
+    x = np.random.RandomState(0).uniform(-1, 1, size=(N, d))
     h = tensap.PolynomialFunctionalBasis(tensap.CanonicalPolynomials(), range(5))
     H = tensap.FunctionalBases.duplicate(h, d)
     I0 = tensap.MultiIndices.with_bounded_norm(d, 1, 2).remove_indices(0)
