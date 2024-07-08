@@ -123,7 +123,7 @@ def multivariate_functions_benchmark(case, *args):
         else:
 
             def fun(x):
-                return np.sin(np.matmul(x, np.reshape(args[1], (-1, 1))))
+                return np.sin(np.matmul(x, np.reshape(args[1], -1)))
 
         X = tensap.RandomVector(tensap.UniformRandomVariable(), d)
 
