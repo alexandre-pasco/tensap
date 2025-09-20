@@ -10,4 +10,6 @@ coverage.xml
 .ipynb_checkpoints
 _build
 prototype/
-numerics/*/*
+numerics/*/outputs*
+numerics/*/processed_outputs*
+numerics/debug
