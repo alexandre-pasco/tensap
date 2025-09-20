@@ -181,7 +181,10 @@ def build_estimator_features(params):
     benchmark_name, benchmark_kwargs = build_benchmark_name_kwargs(params)
 
     _, _, rand_vec = build_benchmark_torch(benchmark_name, **benchmark_kwargs)
-    ind1 = np.array(params.get('indicesx').split('_'), dtype=int)
+
+    ind2 = np.array(params.get('indicesy').split('_'), dtype=int)
+    ind1 = np.delete(np.arange(params.get('d')), ind2)
+
     rand_vec_1 = rand_vec.marginal(ind1)
 
     estimator = PolynomialFeatureEstimator(rand_vec_1, p_norm=1, max_p_norm=1, innerp='h1_0', fit_method=fit_method, fit_parameters=fit_parameters)
@@ -206,8 +209,8 @@ def build_samples(params, seed):
     u, jac_u, rand_vec = build_benchmark_torch(benchmark_name, **benchmark_kwargs)
     
     # indices separation for collective setting
-    ind1 = np.array(params.get('indicesx').split('_'), dtype=int)
     ind2 = np.array(params.get('indicesy').split('_'), dtype=int)
+    ind1 = np.delete(np.arange(params.get('d')), ind2)
 
     # get sample sizes
     n_train = script_params.get('ntrain')
@@ -258,8 +261,7 @@ def build_samples_tensorized(params, seed):
 
     # get sample sizes
     n_train = params.get('ntrain')
-    n_train_over = params.get('ntrainover')
-    n2_train = params.get('m') + n_train_over
+    n2_train = params.get('nytrain')
     n1_train = n_train // n2_train
     n_test = params.get('ntest')
 
@@ -275,8 +277,8 @@ def build_samples_tensorized(params, seed):
     logging.info(f"Generating tensorized train samples of X, jac_u(X1) vectorized and u(X)")
 
     # get indices for tensorization, features will be taken wrt ind1
-    ind1 = np.array(params.get('indicesx').split('_'), dtype=int)
     ind2 = np.array(params.get('indicesy').split('_'), dtype=int)
+    ind1 = np.delete(np.arange(params.get('d')), ind2)
 
     x1_train = rand_vec.marginal(ind1).lhs_random(n1_train, seed=seed)
     x2_train = rand_vec.marginal(ind2).lhs_random(n2_train, seed=seed + 2**10)
@@ -496,17 +498,16 @@ if __name__ == "__main__":
         script_params = {
             'benchname':'quartic_sin_collective',
             'nseeds':2,
-            'fitmethod':'pymanopt',
+            'fitmethod':'surrogate',
             'diroutput':'./numerics/debug/',
             'd':16,
             'nmat':3,
-            'indicesx':np.array2string(np.arange(16-1), separator='_')[1:-1],
             'indicesy':'15',
             'm':3,
             'initmethod': 'as',
             'opti':False,
             'ntrain':500,
-            'ntrainover':2,
+            'nytrain':5,
             'ntest':1000
         }
 
