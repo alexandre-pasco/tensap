@@ -7,8 +7,8 @@ outputpath=./outputs/ # directory where outputs are saved
 mkdir -p ${outputpath} # create the output directory
 
 # submission parameters
-partition=SMP-short
-time=24:00:00
+partition=standard
+time=00:00:05
 
 # Parameters submitted simultaneously
 ntrains=("50" "75" "100" "125" "150" "250" "500")
