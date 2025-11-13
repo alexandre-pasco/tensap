@@ -336,6 +336,37 @@ def _build_quartic_sin_collective(d=9, mat_lst=[]):
 
     return fun_torch, X
 
+def _build_quartic_sin_two_variables(d=8, mat_lst_1=[], mat_lst_2=[]):
+
+    assert d % 2 == 0
+    X = tensap.RandomVector(tensap.UniformRandomVariable(-1, 1), d)
+    
+    if len(mat_lst_1) == 0:
+        mat_lst = [np.eye(d//2)]
+    if len(mat_lst_2) == 0:
+        mat_lst_2 = [np.eye(d//2)]
+
+    mat_lst_1_torch = []
+    for M in mat_lst_1:
+        mat_lst_1_torch.append(torch.asarray(M))
+    
+    mat_lst_2_torch = []
+    for M in mat_lst_2:
+        mat_lst_2_torch.append(torch.asarray(M))
+
+    def fun_torch(x):
+        z = 0.
+        for M1, M2 in zip(mat_lst_1_torch, mat_lst_2_torch):
+            zi = (x[:d//2].T @ M1 @ x[:d//2])
+            zi = zi**2
+            c = torch.pi / (2 * len(mat_lst_1))
+            zi *= torch.sin( c * (x[d//2:].T @ M2 @ x[d//2:]) )
+            z += zi
+        out = z
+        return out
+
+    return fun_torch, X
+
 def build_benchmark_torch(case, **kwargs):
     """
     Generate different functions used to benchmark the package.
@@ -420,6 +451,9 @@ def build_benchmark_torch(case, **kwargs):
     
     elif case == 'quartic_sin_collective':
         fun_torch , X = _build_quartic_sin_collective(**kwargs)
+
+    elif case == 'quartic_sin_two_variables':
+        fun_torch , X = _build_quartic_sin_two_variables(**kwargs)
 
     else:
         raise NotImplementedError("Function not implemented.")

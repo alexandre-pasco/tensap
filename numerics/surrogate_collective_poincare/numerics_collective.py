@@ -10,7 +10,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-DEBUG = True
+DEBUG = False
 
 def get_params():
     """
@@ -183,6 +183,7 @@ def build_estimator_features(params):
     _, _, rand_vec = build_benchmark_torch(benchmark_name, **benchmark_kwargs)
 
     ind2 = np.array(params.get('indicesy').split('_'), dtype=int)
+    # ind2 = np.array(params.get('indicesy'), dtype=int)
     ind1 = np.delete(np.arange(params.get('d')), ind2)
 
     rand_vec_1 = rand_vec.marginal(ind1)
@@ -326,19 +327,8 @@ def build_cv_features(params):
         'innerp':['h1_0'],
     }
 
-    param_grid_1 = {
-        'p_norm':[0.9],
-        'max_p_norm':[2,3],
-        'innerp':['h1_0'],
-    }
 
-    param_grid_2 = {
-        'p_norm':[0.8],
-        'max_p_norm':[2,3,4],
-        'innerp':['h1_0'],
-    }
-
-    param_grid = [param_grid_0, param_grid_1, param_grid_2]
+    param_grid = [param_grid_0]
 
     if DEBUG:
         param_grid = param_grid[0]

@@ -1,13 +1,11 @@
 #!/bin/bash
-
-#SBATCH --job-name=collective-poincare
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --mail-user=
 #SBATCH --mail-type=end
-#SBATCH --output=log.%x.job_%j.out
-#SBATCH --error=log.%x.job_%j.err
+#SBATCH --output=./out/numerics_collective%j.out
+#SBATCH --error=./out/numerics_collective%j.err
 
 #  get parameters in as they are parsed in job submission script
 pythonscript=$1
